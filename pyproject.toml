@@ -1,0 +1,11 @@
+[project]
+name = "hysom-streamlit-app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "hysom>=0.3.3",
+    "plotly[express]>=6.5.0",
+    "streamlit>=1.51.0",
+]
