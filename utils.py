@@ -700,3 +700,9 @@ def loop_interpolation(CQtimeSeries: pd.DataFrame, seq_length) -> np.ndarray:
     col2_interp = np.interp(interp_dists, accum_dists, CQtimeSeries[col2])
     
     return np.stack((col1_interp, col2_interp), axis = 1)
+
+def build_classification_df(classified_loops: list[Loop]) -> pd.DataFrame:
+
+    df = pd.DataFrame([loop.model_dump(mode = "python",exclude = {"coordinates"}) for loop in classified_loops] )
+    
+    return df

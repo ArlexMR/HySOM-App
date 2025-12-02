@@ -8,6 +8,8 @@ hydrologic events.
 import streamlit as st
 import pathlib
 from data_models import UserData, Loop
+import pandas as pd
+import time
 from utils import (
     classify_loops,
     create_frequency_map,
@@ -20,8 +22,10 @@ from utils import (
     load_qt_data_from_file,
     load_events_data_from_file,
     calculate_dataset_metrics,
-    extract_loops
+    extract_loops,
+    build_classification_df
 )
+DATETIME_STR_FORMAT = "YYYY-MM-DD HH:mm:ss"
 
 # Page configuration
 st.set_page_config(
@@ -69,7 +73,6 @@ if 'user_data' not in st.session_state:
     st.session_state.user_data = UserData(QC = None, events= None)
 if 'classified_events' not in st.session_state:
     st.session_state.classified_loops = []
-st.write(f"number of elements in session_state.classified_events: {len(st.session_state.classified_loops)}")
 
 
 # ==================== HEADER ====================
@@ -177,7 +180,7 @@ with col2:
                 user_events = load_events_data_from_file(events_path)
                 st.session_state.user_data.QC = qc
                 st.session_state.user_data.events = user_events
-                st.success("✅ Example data loaded successfully!")
+                scs = st.success("✅ Example data loaded successfully!")
             else:
                 st.error("Example data files not found in assets folder")
         except Exception as e:
@@ -196,25 +199,20 @@ user_events = st.session_state.user_data.events
 
 # classify events if not already done
 if not st.session_state.classified_loops:
-    # Show progress bar for processing   
-    progress_bar = st.progress(0)
+    with st.spinner("Extracting loops...", show_time=True):
+        loops = extract_loops(qc, user_events)
+    scs1 = st.success(f"✅ Succesfully extracted {len(loops)} loops.")
 
-    # Step 1: Extract loops
-    progress_bar.progress(0, text="📊 Extracting hysteresis loops from events...")
-    loops = extract_loops(qc, user_events)
-    
-    # Step 2: Classify loops
-    progress_bar.progress(50, text="🧮 Mapping loops onto the General T-Q SOM...")
-    classified_loops = classify_loops(loops)
-    
-    # Step 3: Complete
-    progress_bar.progress(100, text="✅ Processing complete!")
+        # Step 2: Classify loops
+        # progress_bar.progress(50, text="🧮 Mapping loops onto the General T-Q SOM...")
+    with st.spinner("Classifying loops...", show_time=True):
+        classified_loops = classify_loops(loops)
+    scs2  = st.success(f"✅ Succesfully classified {len(classified_loops)} loops.")
     st.session_state.classified_loops = classified_loops
-    
-    # Clear progress bar after a brief moment
-    import time
-    time.sleep(0.5)
-    progress_bar.empty()
+    scs1.empty()
+    time.sleep(1.0)
+    scs2.empty()
+
 
 classified_loops = st.session_state.classified_loops
 
@@ -227,7 +225,7 @@ metrics = calculate_dataset_metrics(qc, classified_loops)
 cols = st.columns(len(metrics))
 for col, (label, value) in zip(cols, metrics.items()):
     with col:
-        st.metric(label=label, value=value)
+        st.metric(label=label, value=value,)
 
 st.divider()
 
@@ -236,7 +234,8 @@ st.markdown("### 📈 Time Series Visualization")
 
 # Create interactive plotly chart
 # Create interactive plotly chart
-fig = create_time_series_plot(qc, user_events)
+with st.spinner("Creating time series chart...", show_time=True):
+    fig = create_time_series_plot(qc, user_events)
 
 st.plotly_chart(fig, width = "stretch")
 
@@ -244,7 +243,7 @@ st.info("💡 **Tip**: Green shaded areas represent hydrologic events. Zoom in t
 
 st.divider()
 
-# ==================== EVENTS TABLE & LOOP COMPARISON ====================
+# ==================== EVENTS TABLE & LOOPS VIEWER ====================
 st.markdown("### 📋 Event Classifications & Loop Comparison")
 
 st.markdown("""
@@ -254,37 +253,31 @@ Select events using checkboxes to plot their hysteresis loops.
 
 # Wrap entire section in fragment to prevent full app reruns
 @st.fragment
-def events_and_comparison_fragment():
+def display_events_table_and_loop_viewer(classified_loops: list[Loop]):
     # Two-column layout: Table on left, Comparison chart on right
     col_table, col_comparison = st.columns([1.2, 1])
     
     with col_table:
         st.markdown("#### Events Table")
         
-        # Format the table for display
-        display_df = bmu_results.copy()
-        # display_df['start'] = display_df['start'].dt.strftime('%Y-%m-%d %H:%M')
-        # display_df['end'] = display_df['end'].dt.strftime('%Y-%m-%d %H:%M')
-        
-        # Display with selection (on_select="rerun" only reruns the fragment now)
+        display_df = build_classification_df(classified_loops)
         event_selection = st.dataframe(
             display_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             on_select="rerun",
             selection_mode="multi-row",
             column_config={
-                "Event_ID": st.column_config.NumberColumn("Event #", format="%d"),
-                # "start": st.column_config.TextColumn("Start Time"),
-                # "end": st.column_config.TextColumn("End Time"),
-                "BMU_Row": st.column_config.NumberColumn("BMU Row", format="%d"),
-                "BMU_Col": st.column_config.NumberColumn("BMU Col", format="%d"),
-                "Distance": st.column_config.NumberColumn("Distance", format="%.4f", help="Distance from BMU prototype (lower is better)")
+                "ID": st.column_config.NumberColumn("Event #", format="%d", pinned=True),
+                "start": st.column_config.DatetimeColumn("Start Time", format=DATETIME_STR_FORMAT),
+                "end": st.column_config.DatetimeColumn("End Time", format=DATETIME_STR_FORMAT),
+                "BMU" : st.column_config.TextColumn("BMU [row, col]", help = "Coordinates of the Best Matching Unit, i.e., the prototype in the General T-Q SOM that is most similar to the given loop."),
+                "distance": st.column_config.NumberColumn("Distance", format="%.4f", help="DTW distance from BMU prototype (lower is better)")
             }
         )
         
         # Download button for results
-        csv = bmu_results.to_csv(index=False)
+        csv = display_df.to_csv(index=False)
         st.download_button(
             label="📥 Download Results as CSV",
             data=csv,
@@ -371,7 +364,11 @@ def events_and_comparison_fragment():
             st.info("Select events from the table or add a prototype to compare loops")
 
 # Call the fragment
-events_and_comparison_fragment()
+classified_loops = st.session_state.classified_loops
+if len(classified_loops) > 0:
+    display_events_table_and_loop_viewer(st.session_state.classified_loops)
+else:
+    st.warning("No valid loops found")
 
 st.divider()
 
