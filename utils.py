@@ -7,50 +7,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
 from datetime import datetime
-
-
-def extract_hysteresis_loops(
-    qt_data: pd.DataFrame, 
-    events: pd.DataFrame
-) -> List[np.ndarray]:
-    """
-    Mock function to extract hysteresis loops from Q-T data based on events.
-    
-    In a real implementation, this would:
-    - Extract discharge and concentration data for each event
-    - Normalize the data
-    - Create hysteresis loop representations
-    
-    Args:
-        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
-        events: DataFrame with columns ['start', 'end']
-    
-    Returns:
-        List of numpy arrays, each representing a hysteresis loop
-    """
-    loops = []
-    
-    for _, event in events.iterrows():
-        # Extract data for this event
-        mask = (qt_data.index >= event['start']) & (qt_data.index <= event['end'])
-        event_data = qt_data[mask]
-        
-        if len(event_data) > 0:
-            # Mock: Create a simple loop representation (normalized Q and C values)
-            q_values = event_data['Qcms'].values
-            c_values = event_data['turb'].values
-            
-            # Normalize (mock normalization)
-            q_norm = (q_values - q_values.min()) / (q_values.max() - q_values.min() + 1e-10)
-            c_norm = (c_values - c_values.min()) / (c_values.max() - c_values.min() + 1e-10)
-            
-            # Create loop representation
-            loop = np.column_stack([q_norm, c_norm])
-            loops.append(loop)
-    
-    return loops
+from hysom import HSOM
+from hysom.pretrainedSOM import get_generalTQSOM
 
 
 def get_bmu_for_loop(loop: np.ndarray, som_shape: Tuple[int, int] = (8, 8)) -> Tuple[int, int]:
@@ -127,40 +87,38 @@ def calculate_loop_distance(loop: np.ndarray, bmu: Tuple[int, int]) -> float:
     return round(distance, 4)
 
 
-def calculate_bmu_for_events(
-    qt_data: pd.DataFrame, 
-    events: pd.DataFrame,
-    som_shape: Tuple[int, int] = (8, 8)
+def classify_loops(
+    loops: List[np.ndarray],
+    event_ids: List[int],
 ) -> pd.DataFrame:
     """
     Calculate BMU coordinates for all events.
     
     Args:
-        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
-        events: DataFrame with columns ['start', 'end']
-        som_shape: Shape of the SOM grid
+        som: HSOM
+        loops: List of numpy arrays, each representing a loop
+        event_ids: List of event IDs
     
     Returns:
         DataFrame with event info, BMU coordinates, and distances
     """
-    # Extract loops
-    loops = extract_hysteresis_loops(qt_data, events)
-    
+    som = get_generalTQSOM()
+
     # Calculate BMU for each loop
-    bmus = [get_bmu_for_loop(loop, som_shape) for loop in loops]
-    
-    # Calculate distances
-    distances = [calculate_loop_distance(loop, bmu) for loop, bmu in zip(loops, bmus)]
+
+    #TODO: Modify HySOM to prevent double computation of distances
+    bmus = [som.get_BMU(loop) for loop in loops]
+    distances = [som.distance_function(som.get_prototypes(), loop).min() for loop in loops]
     
     # Create results dataframe
-    results = events.copy()
+    results = pd.DataFrame()
     results['BMU_Row'] = [bmu[0] for bmu in bmus]
     results['BMU_Col'] = [bmu[1] for bmu in bmus]
     results['Distance'] = distances
-    results['Event_ID'] = range(1, len(results) + 1)
+    results['Event_ID'] = event_ids
     
     # Reorder columns
-    results = results[['Event_ID', 'start', 'end', 'BMU_Row', 'BMU_Col', 'Distance']]
+    results = results[['Event_ID','BMU_Row', 'BMU_Col', 'Distance']]
     
     return results
 
@@ -652,7 +610,7 @@ def load_events_data_from_file(uploaded_file) -> pd.DataFrame:
     Raises:
         ValueError: If required columns are missing
     """
-    events_data = pd.read_csv(uploaded_file)
+    events_data = pd.read_csv(uploaded_file, parse_dates=  True)
     
     # Validate required columns
     required_cols = ['start', 'end']
@@ -663,7 +621,9 @@ def load_events_data_from_file(uploaded_file) -> pd.DataFrame:
     # Convert to datetime
     events_data['start'] = pd.to_datetime(events_data['start'])
     events_data['end'] = pd.to_datetime(events_data['end'])
-    
+    events_data.reset_index(drop=True, inplace=True) 
+    events_data.index = events_data.index + 1
+    events_data.index.name = 'event_id'
     return events_data
 
 
@@ -671,7 +631,7 @@ def calculate_dataset_metrics(
     qt_data: pd.DataFrame,
     events_data: pd.DataFrame,
     bmu_results: pd.DataFrame
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Calculate summary metrics for the dataset.
     
@@ -693,3 +653,51 @@ def calculate_dataset_metrics(
         "Date Range (days)": date_range
     }
 
+def extract_loops(qt_data: pd.DataFrame, events_data: pd.DataFrame) -> Tuple[List[np.ndarray], List[int]]:
+    """
+    Extract hysteresis loops from events in the time series data.
+    
+    Args:
+        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
+        events_data: DataFrame with columns ['start', 'end'] as datetime
+    
+    Returns:
+        List of numpy arrays, each representing a loop
+    """
+    loops = []
+    event_ids = []
+    for event_id, event in events_data.iterrows():
+        mask = (qt_data.index >= event['start']) & (qt_data.index <= event['end'])
+        event_data = qt_data.loc[mask]
+
+        if len(event_data) > 1:
+            qtnormalized = (event_data - event_data.min()) / (event_data.max() - event_data.min())
+            loops.append(loop_interpolation(qtnormalized, 100))
+            event_ids.append(event_id)
+    return loops, event_ids
+
+def loop_interpolation(CQtimeSeries: pd.DataFrame, seq_length) -> np.ndarray:
+    """
+    Interpolates a hysteresis loop in the C-Q plane to make it compatible with `HSOM`. 
+    The resulting loop will have `seq_length` evenly spaced data points.
+    Note that the interpolation procedure ignores time information
+
+    Parameters:
+    - CQtimeSeries (pd.DataFrame): Pandas DataFrame with two columns. Typically: (discharge, concentration)
+    - seq-length (int): number  
+    
+    Returns:
+    - np.ndarray: Numpy array of shape seq_length x 2 with the interpolated sequence
+
+    """
+    col1, col2 = CQtimeSeries.columns
+    accum_dists = ( (CQtimeSeries[col1] - CQtimeSeries.shift(1)[col1])**2 + (CQtimeSeries[col2] - CQtimeSeries.shift(1)[col2])**2).apply(np.sqrt).cumsum()
+    accum_dists.iloc[0] = 0.0
+    path_length = accum_dists.max()
+    
+    interp_dists = np.linspace(0,path_length, seq_length)
+    
+    col1_interp = np.interp(interp_dists, accum_dists, CQtimeSeries[col1])
+    col2_interp = np.interp(interp_dists, accum_dists, CQtimeSeries[col2])
+    
+    return np.stack((col1_interp, col2_interp), axis = 1)

@@ -7,5 +7,6 @@ requires-python = ">=3.13"
 dependencies = [
     "hysom>=0.3.3",
     "plotly[express]>=6.5.0",
+    "pydantic>=2.12.5",
     "streamlit>=1.51.0",
 ]
