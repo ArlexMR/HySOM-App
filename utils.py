@@ -11,7 +11,7 @@ from typing import List, Tuple, Dict, Any
 from datetime import datetime
 from hysom import HSOM
 from hysom.pretrainedSOM import get_generalTQSOM
-
+from data_models import Loop
 
 def get_bmu_for_loop(loop: np.ndarray, som_shape: Tuple[int, int] = (8, 8)) -> Tuple[int, int]:
     """
@@ -88,9 +88,8 @@ def calculate_loop_distance(loop: np.ndarray, bmu: Tuple[int, int]) -> float:
 
 
 def classify_loops(
-    loops: List[np.ndarray],
-    event_ids: List[int],
-) -> pd.DataFrame:
+    loops: List[Loop],
+) -> List[Loop]:
     """
     Calculate BMU coordinates for all events.
     
@@ -103,24 +102,22 @@ def classify_loops(
         DataFrame with event info, BMU coordinates, and distances
     """
     som = get_generalTQSOM()
-
+    prototypes = som.get_prototypes()
     # Calculate BMU for each loop
 
-    #TODO: Modify HySOM to prevent double computation of distances
-    bmus = [som.get_BMU(loop) for loop in loops]
-    distances = [som.distance_function(som.get_prototypes(), loop).min() for loop in loops]
-    
-    # Create results dataframe
-    results = pd.DataFrame()
-    results['BMU_Row'] = [bmu[0] for bmu in bmus]
-    results['BMU_Col'] = [bmu[1] for bmu in bmus]
-    results['Distance'] = distances
-    results['Event_ID'] = event_ids
-    
-    # Reorder columns
-    results = results[['Event_ID','BMU_Row', 'BMU_Col', 'Distance']]
-    
-    return results
+    classified_loops = []
+    for loop in loops:
+        loop_coords = loop.coordinates
+        distances = som.distance_function(prototypes, loop_coords)
+        min_dist = distances.min() 
+        unraveled = np.unravel_index(distances.argmin(), distances.shape)
+        BMU = tuple(int(x) for x in unraveled)
+
+        classified_loop = loop.model_copy(deep = True)
+        classified_loop.BMU = BMU
+        classified_loop.distance = min_dist
+        classified_loops.append(classified_loop)   
+    return classified_loops
 
 
 def create_frequency_map(
@@ -629,31 +626,29 @@ def load_events_data_from_file(uploaded_file) -> pd.DataFrame:
 
 def calculate_dataset_metrics(
     qt_data: pd.DataFrame,
-    events_data: pd.DataFrame,
-    bmu_results: pd.DataFrame
+    classified_loops: list[Loop]
 ) -> Dict[str, Any]:
     """
     Calculate summary metrics for the dataset.
     
     Args:
         qt_data: DataFrame with datetime index
-        events_data: DataFrame with event information
-        bmu_results: DataFrame with BMU classifications
+        classified_events: list[Loop] list of classified Loop instances 
     
     Returns:
         Dictionary with metric names and values
     """
-    unique_bmus = bmu_results[['BMU_Row', 'BMU_Col']].drop_duplicates()
+    unique_bmus = set([loop.BMU for loop in classified_loops] )
     date_range = (qt_data.index[-1] - qt_data.index[0]).days
     
     return {
-        "Total Events": len(events_data),
+        "Total Events": len(classified_loops),
         "Time Series Records": f"{len(qt_data):,}",
         "Unique BMU Patterns": len(unique_bmus),
         "Date Range (days)": date_range
     }
 
-def extract_loops(qt_data: pd.DataFrame, events_data: pd.DataFrame) -> Tuple[List[np.ndarray], List[int]]:
+def extract_loops(qc_data: pd.DataFrame, events_data: pd.DataFrame) -> list[Loop]:
     """
     Extract hysteresis loops from events in the time series data.
     
@@ -665,16 +660,20 @@ def extract_loops(qt_data: pd.DataFrame, events_data: pd.DataFrame) -> Tuple[Lis
         List of numpy arrays, each representing a loop
     """
     loops = []
-    event_ids = []
-    for event_id, event in events_data.iterrows():
-        mask = (qt_data.index >= event['start']) & (qt_data.index <= event['end'])
-        event_data = qt_data.loc[mask]
+    for event_id, (_,event) in enumerate(events_data.iterrows()):
+        mask = (qc_data.index >= event['start']) & (qc_data.index <= event['end'])
+        event_data = qc_data.loc[mask]
 
         if len(event_data) > 1:
             qtnormalized = (event_data - event_data.min()) / (event_data.max() - event_data.min())
-            loops.append(loop_interpolation(qtnormalized, 100))
-            event_ids.append(event_id)
-    return loops, event_ids
+            loop_coords = loop_interpolation(qtnormalized, 100)
+            loop = Loop(ID = event_id,
+                        start=event["start"],
+                        end = event['end'],
+                        coordinates=loop_coords
+            )
+            loops.append(loop)
+    return loops 
 
 def loop_interpolation(CQtimeSeries: pd.DataFrame, seq_length) -> np.ndarray:
     """

@@ -7,6 +7,7 @@ hydrologic events.
 
 import streamlit as st
 import pathlib
+from data_models import UserData, Loop
 from utils import (
     classify_loops,
     create_frequency_map,
@@ -31,7 +32,7 @@ st.set_page_config(
 )
 
 # Custom CSS for better styling
-st.markdown("""
+st.html("""
     <style>
     .main-header {
         font-size: 2.5rem;
@@ -60,17 +61,16 @@ st.markdown("""
         text-align: center;
     }
     </style>
-""", unsafe_allow_html=True)
+""")
 
 # Initialize session state
-if 'qt_data' not in st.session_state:
-    st.session_state.qt_data = None
-if 'events_data' not in st.session_state:
-    st.session_state.events_data = None
-if 'loops' not in st.session_state:
-    st.session_state.loops_w_ids = None
-if 'bmu_results' not in st.session_state:
-    st.session_state.bmu_results = None
+
+if 'user_data' not in st.session_state:
+    st.session_state.user_data = UserData(QC = None, events= None)
+if 'classified_events' not in st.session_state:
+    st.session_state.classified_loops = []
+st.write(f"number of elements in session_state.classified_events: {len(st.session_state.classified_loops)}")
+
 
 # ==================== HEADER ====================
 st.html('<div class="main-header">🌊 HySOM: Hysteresis Loop Classifier</div>')
@@ -119,27 +119,29 @@ st.markdown("### 📁 Upload Your Data")
 
 col1, col2 = st.columns(2)
 
+# Load QC data
 with col1:
     st.markdown("#### Discharge-Concentration Time Series")
-    uploaded_qt = st.file_uploader(
+    uploaded_qc = st.file_uploader(
         "Upload CSV file with columns: `datetime`, `Qcms`, `turb`",
         type=["csv"],
         key="qt_uploader",
         help="CSV file containing timestamp, discharge (Qcms), and concentration (turb) data"
     )
     
-    if uploaded_qt is not None:
+    if uploaded_qc is not None:
         try:
-            qt_data = load_qt_data_from_file(uploaded_qt)
-            st.session_state.qt_data = qt_data
-            st.success(f"✅ Loaded {len(qt_data)} time series records")
+            qc = load_qt_data_from_file(uploaded_qc)
+            st.session_state.user_data.QC = qc
+            st.success(f"✅ Loaded {len(qc)} time series records")
             
             # Show data preview
             with st.expander("Preview data"):
-                st.dataframe(qt_data.head(10), use_container_width=True)
+                st.dataframe(qc.head(max(10, len(qc))), width="stretch")
         except Exception as e:
             st.error(f"Error loading Q-T data: {str(e)}")
 
+# Load Events data
 with col2:
     st.markdown("#### Hydrologic Events")
     uploaded_events = st.file_uploader(
@@ -151,13 +153,13 @@ with col2:
     
     if uploaded_events is not None:
         try:
-            events_data = load_events_data_from_file(uploaded_events)
-            st.session_state.events_data = events_data
-            st.success(f"✅ Loaded {len(events_data)} events")
+            user_events = load_events_data_from_file(uploaded_events)
+            st.session_state.user_data.events = user_events
+            st.success(f"✅ Loaded {len(user_events)} events")
             
             # Show data preview
             with st.expander("Preview events"):
-                st.dataframe(events_data.head(10), use_container_width=True)
+                st.dataframe(user_events.head(max(10, len(user_events))), width="stretch")
         except Exception as e:
             st.error(f"Error loading events data: {str(e)}")
 
@@ -168,14 +170,13 @@ with col2:
     if st.button("📂 Load Example Data", use_container_width=True):
         try:
             # Load example data
-            qt_path = pathlib.Path("assets").joinpath("QTdata.csv")
+            qc_path = pathlib.Path("assets").joinpath("QTdata.csv")
             events_path = pathlib.Path("assets").joinpath("events.csv")
-            
-            if qt_path.exists() and events_path.exists():
-                qt_data = load_qt_data_from_file(qt_path)
-                events_data = load_events_data_from_file(events_path)
-                st.session_state.qt_data = qt_data
-                st.session_state.events_data = events_data
+            if qc_path.exists() and events_path.exists():
+                qc = load_qt_data_from_file(qc_path)
+                user_events = load_events_data_from_file(events_path)
+                st.session_state.user_data.QC = qc
+                st.session_state.user_data.events = user_events
                 st.success("✅ Example data loaded successfully!")
             else:
                 st.error("Example data files not found in assets folder")
@@ -186,44 +187,42 @@ st.divider()
 
 # ==================== ANALYSIS & VISUALIZATION ====================
 
-if (st.session_state.qt_data is None) or (st.session_state.events_data is None):
+if (st.session_state.user_data.QC is None) or (st.session_state.user_data.events is None):
     st.info("👆 Please upload your data files or load the example data to begin the analysis.")
     st.stop()
 
-qt_data = st.session_state.qt_data
-events_data = st.session_state.events_data
+qc = st.session_state.user_data.QC
+user_events = st.session_state.user_data.events
 
-# Calculate BMUs if not already done
-if st.session_state.bmu_results is None:
-    # Show progress bar for processing
-    progress_text = "Processing data and calculating BMUs..."
-    progress_bar = st.progress(0, text=progress_text)
-    
+# classify events if not already done
+if not st.session_state.classified_loops:
+    # Show progress bar for processing   
+    progress_bar = st.progress(0)
+
     # Step 1: Extract loops
-    progress_bar.progress(25, text="📊 Extracting hysteresis loops from events...")
-    loops, event_ids = extract_loops(qt_data, events_data)
-
-    # Step 2: Calculate BMUs and distances
-    progress_bar.progress(50, text="🧮 Calculating Best Matching Units...")
-    bmu_results = classify_loops(loops, event_ids)
+    progress_bar.progress(0, text="📊 Extracting hysteresis loops from events...")
+    loops = extract_loops(qc, user_events)
+    
+    # Step 2: Classify loops
+    progress_bar.progress(50, text="🧮 Mapping loops onto the General T-Q SOM...")
+    classified_loops = classify_loops(loops)
     
     # Step 3: Complete
     progress_bar.progress(100, text="✅ Processing complete!")
-    st.session_state.loops_w_ids = {id_:loop for id_, loop in zip(event_ids, loops)}
-    st.session_state.bmu_results = bmu_results
+    st.session_state.classified_loops = classified_loops
     
     # Clear progress bar after a brief moment
     import time
     time.sleep(0.5)
     progress_bar.empty()
 
-bmu_results = st.session_state.bmu_results
-loops_w_ids = st.session_state.loops_w_ids
+classified_loops = st.session_state.classified_loops
+
 # ==================== METRICS ====================
 st.markdown("### 📊 Dataset Summary")
 
 # Calculate and display metrics
-metrics = calculate_dataset_metrics(qt_data, events_data, bmu_results)
+metrics = calculate_dataset_metrics(qc, classified_loops)
 
 cols = st.columns(len(metrics))
 for col, (label, value) in zip(cols, metrics.items()):
@@ -237,9 +236,9 @@ st.markdown("### 📈 Time Series Visualization")
 
 # Create interactive plotly chart
 # Create interactive plotly chart
-fig = create_time_series_plot(qt_data, events_data)
+fig = create_time_series_plot(qc, user_events)
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width = "stretch")
 
 st.info("💡 **Tip**: Green shaded areas represent hydrologic events. Zoom in to explore specific events in detail!")
 
@@ -250,7 +249,7 @@ st.markdown("### 📋 Event Classifications & Loop Comparison")
 
 st.markdown("""
 This table shows each hydrologic event with its BMU coordinates and distance metric.
-Select events using checkboxes to compare their hysteresis loops side-by-side.
+Select events using checkboxes to plot their hysteresis loops.
 """)
 
 # Wrap entire section in fragment to prevent full app reruns
@@ -346,7 +345,7 @@ def events_and_comparison_fragment():
         # Add prototype loops
         for proto_key in st.session_state.selected_prototypes:
             avg_loop = get_average_loop_for_bmu(
-                qt_data, events_data, bmu_results,
+                qc, user_events, bmu_results,
                 proto_key[0], proto_key[1]
             )
             if len(avg_loop) > 0:
@@ -435,8 +434,8 @@ with col_loops:
         
         # Get and plot loops for selected BMU
         loops, event_ids = get_loops_for_bmu(
-            qt_data, 
-            events_data, 
+            qc, 
+            user_events, 
             bmu_results, 
             selected_row, 
             selected_col
