@@ -12,7 +12,7 @@ import pandas as pd
 import time
 from utils import (
     classify_loops,
-    create_frequency_map,
+    get_frequency_matrix,
     plot_frequency_map,
     get_loops_for_bmu,
     plot_hysteresis_loops,
@@ -23,7 +23,9 @@ from utils import (
     load_events_data_from_file,
     calculate_dataset_metrics,
     extract_loops,
-    build_classification_df
+    build_classification_df,
+    style_df,
+    get_prototype
 )
 DATETIME_STR_FORMAT = "YYYY-MM-DD HH:mm:ss"
 
@@ -67,6 +69,40 @@ st.html("""
     </style>
 """)
 
+
+# ==================== SIDEBAR ====================
+with st.sidebar:
+    st.markdown("## ⚙️ Settings & Info")
+    
+    st.markdown("### SOM Configuration")
+    st.markdown("""
+    - **Grid Size**: 8 × 8
+    - **Training Data**: Multi-watershed dataset
+    - **Input Features**: Normalized Q-C loops
+    """)
+    
+    st.divider()
+    
+    st.markdown("### 📚 Resources")
+    st.markdown("""
+    - [Documentation](#)
+    - [GitHub Repository](#)
+    - [Research Paper](#)
+    """)
+    
+    st.divider()
+    
+    # st.markdown("### 🔄 Reset Application")
+    # if st.button("Clear All Data", width="stretch"):
+
+    #     st.rerun()
+    
+    # st.divider()
+    
+
+    st.markdown("**Version**: 1.0.0 (Demo)")
+    st.markdown("**Status**: Mock Functions Active")
+
 # Initialize session state
 
 if 'user_data' not in st.session_state:
@@ -107,11 +143,12 @@ with st.expander("ℹ️ About this Application", expanded=False):
 # ==================== SOM VISUALIZATION ====================
 st.markdown("### 🗺️ The Trained Self-Organizing Map")
 
-col1, col2, col3 = st.columns([1, 2, 1])
+col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     som_image_path = pathlib.Path("assets").joinpath("TQSOM.png")
     if som_image_path.exists():
-        st.image(str(som_image_path), caption="General T-Q SOM: Each cell represents a distinct hysteresis pattern", use_container_width=True)
+        st.image(str(som_image_path), 
+                 width=500)
     else:
         st.info("SOM visualization image not found. Please ensure 'assets/TQSOM.png' exists.")
 
@@ -170,7 +207,7 @@ with col2:
 st.markdown("---")
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    if st.button("📂 Load Example Data", use_container_width=True):
+    if st.button("📂 Load Example Data", width="stretch"):
         try:
             # Load example data
             qc_path = pathlib.Path("assets").joinpath("QTdata.csv")
@@ -203,8 +240,6 @@ if not st.session_state.classified_loops:
         loops = extract_loops(qc, user_events)
     scs1 = st.success(f"✅ Succesfully extracted {len(loops)} loops.")
 
-        # Step 2: Classify loops
-        # progress_bar.progress(50, text="🧮 Mapping loops onto the General T-Q SOM...")
     with st.spinner("Classifying loops...", show_time=True):
         classified_loops = classify_loops(loops)
     scs2  = st.success(f"✅ Succesfully classified {len(classified_loops)} loops.")
@@ -253,15 +288,22 @@ Select events using checkboxes to plot their hysteresis loops.
 
 # Wrap entire section in fragment to prevent full app reruns
 @st.fragment
-def display_events_table_and_loop_viewer(classified_loops: list[Loop]):
+def display_events_table_and_loop_viewer():
     # Two-column layout: Table on left, Comparison chart on right
     col_table, col_comparison = st.columns([1.2, 1])
-    
+    classified_loops = st.session_state.classified_loops
     with col_table:
         st.markdown("#### Events Table")
         
-        display_df = build_classification_df(classified_loops)
-        event_selection = st.dataframe(
+        classification_df = build_classification_df(classified_loops)
+        display_df = style_df(classification_df, 
+                              cmap = "RdYlGn_r",
+                              vmin=-0.5,
+                              vmax=3.5,
+                              alpha=0.1,
+                              subset = ["distance"]
+                              )
+        df_selection = st.dataframe(
             display_df,
             width="stretch",
             hide_index=True,
@@ -277,74 +319,58 @@ def display_events_table_and_loop_viewer(classified_loops: list[Loop]):
         )
         
         # Download button for results
-        csv = display_df.to_csv(index=False)
+        csv = classification_df.to_csv(index=False)
         st.download_button(
             label="📥 Download Results as CSV",
             data=csv,
             file_name="hysteresis_classification_results.csv",
             mime="text/csv",
-            use_container_width=True
+            width="stretch"
         )
     
     with col_comparison:
-        st.markdown("#### Loop Comparison")
-        
-        # Get selected rows
-        selected_rows = event_selection.selection.rows if event_selection.selection else [] # type: ignore
+        st.markdown("#### Loop Viewer")
         
         # Controls for adding prototype
-        with st.expander("➕ Add SOM Prototype Loop"):
+        with st.expander("➕ Add SOM Prototype"):
             subcol1, subcol2, subcol3 = st.columns([1, 1, 1])
             with subcol1:
                 proto_row = st.number_input("Row", min_value=0, max_value=7, value=0, key="proto_row")
             with subcol2:
                 proto_col = st.number_input("Col", min_value=0, max_value=7, value=0, key="proto_col")
             with subcol3:
-                add_proto = st.button("Add", use_container_width=True, key="add_proto")
+                add_proto = st.button("Add", width="stretch", key="add_proto")
         
         # Initialize session state for prototype selection
         if 'selected_prototypes' not in st.session_state:
-            st.session_state.selected_prototypes = []
+            st.session_state.selected_prototypes = set()
         
         if add_proto:
-            proto_key = (proto_row, proto_col)
-            if proto_key not in st.session_state.selected_prototypes:
-                st.session_state.selected_prototypes.append(proto_key)
+            st.session_state.selected_prototypes.add((proto_row, proto_col))
         
+        # Get selected rows
+        selected_rows = df_selection.get("selection", {}).get("rows", [])
         # Collect loops and labels
         loops_to_plot = []
         labels_to_plot = []
-        
+
         # Add selected event loops
+        classified_loops = st.session_state.classified_loops
         if len(selected_rows) > 0:
-            for loop_id in selected_rows:
-                loop = loops_w_ids["loop_id"]
-                # event_row = bmu_results.loc[row_idx]
-                # event_id = event_row['Event_ID']
-                # start = event_row['start']
-                # end = event_row['end']
-                
-                # # Extract loop data
-                # mask = (qt_data.index >= start) & (qt_data.index <= end)
-                # event_data = qt_data[mask]
-                
-                # if len(event_data) > 0:
-                #     q_values = event_data['Qcms'].values
-                #     c_values = event_data['turb'].values
-                #     loop = np.column_stack([q_values, c_values])
-                loops_to_plot.append(loop)
+            for row_id in selected_rows:
+                loop_id = classification_df.iloc[row_id]["ID"] 
+                loop = next((item for item in classified_loops if item.ID == loop_id), None)
+                if not loop:
+                    continue
+                loops_to_plot.append(loop.coordinates)
                 labels_to_plot.append(f"Event {loop_id}")
         
         # Add prototype loops
-        for proto_key in st.session_state.selected_prototypes:
-            avg_loop = get_average_loop_for_bmu(
-                qc, user_events, bmu_results,
-                proto_key[0], proto_key[1]
-            )
-            if len(avg_loop) > 0:
-                loops_to_plot.append(avg_loop)
-                labels_to_plot.append(f"Prototype ({proto_key[0]}, {proto_key[1]})")
-        
+        for proto_coords in st.session_state.selected_prototypes:
+            proto_loop = get_prototype(proto_coords)
+            loops_to_plot.append(proto_loop)
+            labels_to_plot.append(f"Prototype ({proto_coords[0]}, {proto_coords[1]})")
+    
         # Plot comparison
         if len(loops_to_plot) > 0:
             comp_fig = plot_loop_comparison(
@@ -352,13 +378,13 @@ def display_events_table_and_loop_viewer(classified_loops: list[Loop]):
                 labels_to_plot,
                 title=f"Comparing {len(loops_to_plot)} Loop(s)"
             )
-            st.plotly_chart(comp_fig, use_container_width=True)
+            st.plotly_chart(comp_fig, width="stretch")
             
             # Clear buttons
             col_clear1, col_clear2 = st.columns(2)
             with col_clear1:
-                if st.button("Clear Prototypes", use_container_width=True):
-                    st.session_state.selected_prototypes = []
+                if st.button("Clear Prototypes", width="stretch"):
+                    st.session_state.selected_prototypes = set()
                     st.rerun(scope="fragment")  # Only rerun the fragment, not the entire app
         else:
             st.info("Select events from the table or add a prototype to compare loops")
@@ -366,7 +392,7 @@ def display_events_table_and_loop_viewer(classified_loops: list[Loop]):
 # Call the fragment
 classified_loops = st.session_state.classified_loops
 if len(classified_loops) > 0:
-    display_events_table_and_loop_viewer(st.session_state.classified_loops)
+    display_events_table_and_loop_viewer()
 else:
     st.warning("No valid loops found")
 
@@ -380,111 +406,76 @@ The heatmap shows how many hysteresis loops map to each SOM unit.
 Select a BMU coordinate to visualize the loops for that prototype.
 """)
 
-# Create frequency map (only once)
-freq_map = create_frequency_map(bmu_results)
-
-# Two-column layout: Frequency map on left, Loop viewer on right
-col_freq, col_loops = st.columns([1, 1])
-
-with col_freq:
+col_freq_map, col_bmu_selector_and_loops = st.columns([5, 7])
+classified_loops = st.session_state.classified_loops
+with col_freq_map:
     st.markdown("#### Frequency Heatmap")
-    freq_fig = plot_frequency_map(freq_map, title="Event Distribution")
-    st.pyplot(freq_fig, use_container_width=True)
+    with st.spinner("Generating Frequency Distribution...", show_time=True):
+        freq_fig = plot_frequency_map(classified_loops, title="Frequency Distribution")
+        st.pyplot(freq_fig, width="stretch")
 
-with col_loops:
+with col_bmu_selector_and_loops:
     st.markdown("#### Hysteresis Loop Viewer")
     
     # Use fragment to prevent full app rerun when selecting coordinates
     @st.fragment
     def loop_viewer_fragment():
         # BMU selector
-        subcol1, subcol2 = st.columns(2)
-        
-        with subcol1:
-            selected_row = st.selectbox(
-                "BMU Row",
-                options=list(range(8)),
-                index=0,
-                help="Row coordinate (0-7)",
-                key="bmu_row_selector"
-            )
-        
-        with subcol2:
-            selected_col = st.selectbox(
-                "BMU Column",
-                options=list(range(8)),
-                index=0,
-                help="Column coordinate (0-7)",
-                key="bmu_col_selector"
-            )
-        
-        # Show count of events at this BMU
-        count_at_bmu = len(bmu_results[
-            (bmu_results['BMU_Row'] == selected_row) & 
-            (bmu_results['BMU_Col'] == selected_col)
-        ])
-        
-        st.metric(
-            label=f"Events at ({selected_row}, {selected_col})",
-            value=count_at_bmu
+        col_bmu_selector, col_loops_chart = st.columns([2,5])
+        with col_bmu_selector:
+            with st.form("BMU selection"):
+                # subcol1, subcol2, subcol3 = st.columns(3)
+
+                selected_row = st.selectbox(
+                    "BMU Row",
+                    options=list(range(8)),
+                    index=0,
+                    help="Row coordinate (0-7)",
+                    key="bmu_row_selector"
+                )
+                
+                # with subcol2:
+                selected_col = st.selectbox(
+                    "BMU Column",
+                    options=list(range(8)),
+                    index=0,
+                    help="Column coordinate (0-7)",
+                    key="bmu_col_selector"
+                )
+                submitted_bmu = st.form_submit_button("Plot Loops")    
+
+            classified_loops = st.session_state.classified_loops
+            matching_loops = [loop for loop in classified_loops if loop.BMU == (selected_row, selected_col)]
+
+            st.metric(
+                label=f"Events at ({selected_row}, {selected_col})",
+                value=len(matching_loops)
         )
-        
-        # Get and plot loops for selected BMU
-        loops, event_ids = get_loops_for_bmu(
-            qc, 
-            user_events, 
-            bmu_results, 
-            selected_row, 
-            selected_col
-        )
-        
-        if len(loops) > 0:
-            # Plot the loops
-            loop_fig = plot_hysteresis_loops(loops, event_ids, selected_row, selected_col)
-            st.plotly_chart(loop_fig, use_container_width=True)
+        # if not submitted_bmu:
+        #     st.info("Select a BMU to see its associated loops")
+        #     st.stop()
+        if not matching_loops:
+            with col_loops_chart:
+                st.info("No loops for the selected BMU")
+            st.stop()
             
-            # Show event IDs
-            st.caption(f"**Events:** {', '.join([f'E{eid}' for eid in event_ids])}")
-        else:
-            st.info(f"No events at BMU ({selected_row}, {selected_col})")
+        
+        # if matching_loops:
+        selected_loops, ids = zip(*[(loop.coordinates, loop.ID) for loop in matching_loops])
+        # Show count of events at this BMU
+        with col_loops_chart:
+            if len(selected_loops) > 0:
+                # Plot the loops
+                loop_fig = plot_hysteresis_loops(list(selected_loops), list(ids), selected_row, selected_col)
+
+                st.plotly_chart(loop_fig, width="stretch")
+                
+                # Show event IDs
+                st.caption(f"**Events:** {', '.join([f'E{eid}' for eid in ids])}")
+            else:
+                st.info(f"No events at BMU ({selected_row}, {selected_col})")
     
     # Call the fragment
     loop_viewer_fragment()
 
 
-
-
-# ==================== SIDEBAR ====================
-with st.sidebar:
-    st.markdown("## ⚙️ Settings & Info")
-    
-    st.markdown("### SOM Configuration")
-    st.markdown("""
-    - **Grid Size**: 8 × 8
-    - **Training Data**: Multi-watershed dataset
-    - **Input Features**: Normalized Q-C loops
-    """)
-    
-    st.divider()
-    
-    st.markdown("### 📚 Resources")
-    st.markdown("""
-    - [Documentation](#)
-    - [GitHub Repository](#)
-    - [Research Paper](#)
-    """)
-    
-    st.divider()
-    
-    st.markdown("### 🔄 Reset Application")
-    if st.button("Clear All Data", use_container_width=True):
-        st.session_state.qt_data = None
-        st.session_state.events_data = None
-        st.session_state.bmu_results = None
-        st.rerun()
-    
-    st.divider()
-    
-    st.markdown("---")
-    st.markdown("**Version**: 1.0.0 (Demo)")
-    st.markdown("**Status**: Mock Functions Active")

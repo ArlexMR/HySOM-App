@@ -11,7 +11,13 @@ from typing import List, Tuple, Dict, Any
 from datetime import datetime
 from hysom import HSOM
 from hysom.pretrainedSOM import get_generalTQSOM
+from hysom.utils.plots import heatmap_frequency, plot_map
 from data_models import Loop
+from matplotlib.colors import LinearSegmentedColormap, Colormap
+from pandas.io.formats.style import Styler
+
+
+SOM = get_generalTQSOM()
 
 def get_bmu_for_loop(loop: np.ndarray, som_shape: Tuple[int, int] = (8, 8)) -> Tuple[int, int]:
     """
@@ -101,14 +107,14 @@ def classify_loops(
     Returns:
         DataFrame with event info, BMU coordinates, and distances
     """
-    som = get_generalTQSOM()
-    prototypes = som.get_prototypes()
+    
+    prototypes = SOM.get_prototypes()
     # Calculate BMU for each loop
 
     classified_loops = []
     for loop in loops:
         loop_coords = loop.coordinates
-        distances = som.distance_function(prototypes, loop_coords)
+        distances = SOM.distance_function(prototypes, loop_coords)
         min_dist = distances.min() 
         unraveled = np.unravel_index(distances.argmin(), distances.shape)
         BMU = tuple(int(x) for x in unraveled)
@@ -120,9 +126,8 @@ def classify_loops(
     return classified_loops
 
 
-def create_frequency_map(
-    bmu_results: pd.DataFrame,
-    som_shape: Tuple[int, int] = (8, 8)
+def get_frequency_matrix(
+    classified_loops: list[Loop]
 ) -> np.ndarray:
     """
     Create a frequency distribution map showing how many loops map to each BMU.
@@ -147,7 +152,7 @@ def create_frequency_map(
 
 
 def plot_frequency_map(
-    freq_map: np.ndarray,
+    loops: list[Loop],
     title: str = "Frequency Distribution of Hysteresis Loops"
 ) -> plt.Figure:
     """
@@ -160,42 +165,10 @@ def plot_frequency_map(
     Returns:
         Matplotlib figure object
     """
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    # Create heatmap
-    im = ax.imshow(freq_map, cmap='YlOrRd', aspect='auto', origin='upper')
-    
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label('Number of Events', rotation=270, labelpad=20)
-    
-    # Set ticks and labels
-    rows, cols = freq_map.shape
-    ax.set_xticks(np.arange(cols))
-    ax.set_yticks(np.arange(rows))
-    ax.set_xticklabels(np.arange(cols))
-    ax.set_yticklabels(np.arange(rows))
-    
-    # Add grid
-    ax.set_xticks(np.arange(cols + 1) - 0.5, minor=True)
-    ax.set_yticks(np.arange(rows + 1) - 0.5, minor=True)
-    ax.grid(which='minor', color='white', linestyle='-', linewidth=2)
-    
-    # Add text annotations
-    for i in range(rows):
-        for j in range(cols):
-            count = int(freq_map[i, j])
-            if count > 0:
-                text = ax.text(j, i, str(count),
-                             ha="center", va="center", color="black", fontsize=12)
-    
-    # Labels and title
-    ax.set_xlabel('Column', fontsize=12)
-    ax.set_ylabel('Row', fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
-    
-    plt.tight_layout()
-    
+    loop_coords  = [loop.coordinates for loop in loops]
+    heatmap_frequency(SOM,loop_coords)
+
+    fig = plt.gcf()
     return fig
 
 
@@ -362,26 +335,9 @@ def plot_hysteresis_loops(
                          'C: %{y:.2f}<br>' +
                          '<extra></extra>'
         ))
+
         
-        # Add start marker
-        fig.add_trace(go.Scatter(
-            x=[loop[0, 0]],
-            y=[loop[0, 1]],
-            mode='markers',
-            marker=dict(size=10, color=color, symbol='circle', line=dict(color='white', width=2)),
-            showlegend=False,
-            hovertemplate='<b>Start</b><br>Q: %{x:.3f}<br>C: %{y:.2f}<extra></extra>'
-        ))
-        
-        # Add end marker
-        fig.add_trace(go.Scatter(
-            x=[loop[-1, 0]],
-            y=[loop[-1, 1]],
-            mode='markers',
-            marker=dict(size=10, color=color, symbol='square', line=dict(color='white', width=2)),
-            showlegend=False,
-            hovertemplate='<b>End</b><br>Q: %{x:.3f}<br>C: %{y:.2f}<extra></extra>'
-        ))
+
     
     # Update layout
     fig.update_layout(
@@ -389,7 +345,7 @@ def plot_hysteresis_loops(
         xaxis_title="Discharge (Qcms)",
         yaxis_title="Concentration (turb)",
         hovermode='closest',
-        height=600,
+        height=400,
         showlegend=True,
         legend=dict(
             orientation="v",
@@ -706,3 +662,18 @@ def build_classification_df(classified_loops: list[Loop]) -> pd.DataFrame:
     df = pd.DataFrame([loop.model_dump(mode = "python",exclude = {"coordinates"}) for loop in classified_loops] )
     
     return df
+
+def style_df(df: pd.DataFrame, cmap:str | Colormap, vmin:float, vmax:float, subset:list[str], alpha:float) -> Styler:
+    if isinstance(cmap, str):
+        cmap = plt.get_cmap(cmap)
+
+    if alpha < 1:
+        colors = [cmap(i, alpha = alpha) for i in range(cmap.N)]
+        cmap = LinearSegmentedColormap.from_list(f"{cmap.name}_", colors = colors, N= cmap.N) 
+
+    return df.style.background_gradient(cmap = cmap,vmin = vmin, vmax = vmax, subset = subset)
+
+
+
+def get_prototype(bmu: tuple[int,int]):
+    return SOM.get_prototypes()[bmu]
