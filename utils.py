@@ -6,10 +6,11 @@ These functions simulate the ML model operations for UI/UX demonstration
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import plotly.graph_objects as go
 from typing import List, Tuple, Dict, Any
-from datetime import datetime
-from hysom import HSOM
+# from datetime import datetime
+# from hysom import HSOM
 from hysom.pretrainedSOM import get_generalTQSOM
 from hysom.utils.plots import heatmap_frequency, plot_map
 from data_models import Loop
@@ -22,7 +23,6 @@ SOM = get_generalTQSOM()
 def get_bmu_for_loop(loop: np.ndarray, som_shape: Tuple[int, int] = (8, 8)) -> Tuple[int, int]:
     """
     Mock function to get the Best Matching Unit (BMU) for a hysteresis loop.
-    
     In a real implementation, this would:
     - Use the trained SOM model
     - Calculate distances to all neurons
@@ -53,7 +53,6 @@ def get_bmu_for_loop(loop: np.ndarray, som_shape: Tuple[int, int] = (8, 8)) -> T
     col = min(max(0, col + variation), som_shape[1] - 1)
     
     return (row, col)
-
 
 def calculate_loop_distance(loop: np.ndarray, bmu: Tuple[int, int]) -> float:
     """
@@ -92,10 +91,7 @@ def calculate_loop_distance(loop: np.ndarray, bmu: Tuple[int, int]) -> float:
     
     return round(distance, 4)
 
-
-def classify_loops(
-    loops: List[Loop],
-) -> List[Loop]:
+def classify_loops(loops: List[Loop]) -> List[Loop]:
     """
     Calculate BMU coordinates for all events.
     
@@ -125,36 +121,7 @@ def classify_loops(
         classified_loops.append(classified_loop)   
     return classified_loops
 
-
-def get_frequency_matrix(
-    classified_loops: list[Loop]
-) -> np.ndarray:
-    """
-    Create a frequency distribution map showing how many loops map to each BMU.
-    
-    Args:
-        bmu_results: DataFrame with columns ['BMU_Row', 'BMU_Col']
-        som_shape: Shape of the SOM grid
-    
-    Returns:
-        2D numpy array with frequency counts
-    """
-    # Initialize frequency map
-    freq_map = np.zeros(som_shape)
-    
-    # Count occurrences at each BMU
-    for _, row in bmu_results.iterrows():
-        bmu_row = int(row['BMU_Row'])
-        bmu_col = int(row['BMU_Col'])
-        freq_map[bmu_row, bmu_col] += 1
-    
-    return freq_map
-
-
-def plot_frequency_map(
-    loops: list[Loop],
-    title: str = "Frequency Distribution of Hysteresis Loops"
-) -> plt.Figure:
+def plot_frequency_map(loops: list[Loop]) -> Figure:
     """
     Create a matplotlib heatmap of the frequency distribution.
     
@@ -171,116 +138,7 @@ def plot_frequency_map(
     fig = plt.gcf()
     return fig
 
-
-def get_loops_for_bmu(
-    qt_data: pd.DataFrame,
-    events: pd.DataFrame,
-    bmu_results: pd.DataFrame,
-    target_row: int,
-    target_col: int
-) -> Tuple[List[np.ndarray], List[int]]:
-    """
-    Get all hysteresis loops that map to a specific BMU.
-    
-    Args:
-        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
-        events: DataFrame with columns ['start', 'end']
-        bmu_results: DataFrame with BMU classifications
-        target_row: Target BMU row coordinate
-        target_col: Target BMU column coordinate
-    
-    Returns:
-        Tuple of (list of loop arrays, list of event IDs)
-    """
-    # Find events that map to this BMU
-    matching_events = bmu_results[
-        (bmu_results['BMU_Row'] == target_row) & 
-        (bmu_results['BMU_Col'] == target_col)
-    ]
-    
-    if len(matching_events) == 0:
-        return [], []
-    
-    # Extract loops for these events
-    loops = []
-    event_ids = []
-    
-    for _, event_row in matching_events.iterrows():
-        event_id = event_row['Event_ID']
-        start = event_row['start']
-        end = event_row['end']
-        
-        # Extract data for this event
-        mask = (qt_data.index >= start) & (qt_data.index <= end)
-        event_data = qt_data[mask]
-        
-        if len(event_data) > 0:
-            q_values = event_data['Qcms'].values
-            c_values = event_data['turb'].values
-            
-            # Store raw values (not normalized) for visualization
-            loop = np.column_stack([q_values, c_values])
-            loops.append(loop)
-            event_ids.append(event_id)
-    
-    return loops, event_ids
-
-
-def get_average_loop_for_bmu(
-    qt_data: pd.DataFrame,
-    events: pd.DataFrame,
-    bmu_results: pd.DataFrame,
-    target_row: int,
-    target_col: int,
-    num_points: int = 50
-) -> np.ndarray:
-    """
-    Create a mock average loop for a specific BMU prototype.
-    
-    Args:
-        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
-        events: DataFrame with columns ['start', 'end']
-        bmu_results: DataFrame with BMU classifications
-        target_row: Target BMU row coordinate
-        target_col: Target BMU column coordinate
-        num_points: Number of points in the averaged loop
-    
-    Returns:
-        Numpy array representing the average loop
-    """
-    # Get all loops for this BMU
-    loops, _ = get_loops_for_bmu(qt_data, events, bmu_results, target_row, target_col)
-    
-    if len(loops) == 0:
-        # Return empty array if no loops
-        return np.array([])
-    
-    # Resample all loops to same number of points
-    resampled_loops = []
-    for loop in loops:
-        if len(loop) < 2:
-            continue
-        # Simple linear interpolation to num_points
-        indices = np.linspace(0, len(loop) - 1, num_points)
-        q_interp = np.interp(indices, np.arange(len(loop)), loop[:, 0])
-        c_interp = np.interp(indices, np.arange(len(loop)), loop[:, 1])
-        resampled_loops.append(np.column_stack([q_interp, c_interp]))
-    
-    if len(resampled_loops) == 0:
-        return np.array([])
-    
-    # Calculate average
-    avg_loop = np.mean(resampled_loops, axis=0)
-    
-    return avg_loop
-
-
-def plot_hysteresis_loops(
-    loops: List[np.ndarray],
-    event_ids: List[int],
-    bmu_row: int,
-    bmu_col: int
-) -> go.Figure:
+def plot_hysteresis_loops(loops: List[np.ndarray],event_ids: List[int],bmu_row: int,bmu_col: int) -> go.Figure:
     """
     Create an interactive Plotly plot of hysteresis loops.
     
@@ -336,9 +194,7 @@ def plot_hysteresis_loops(
                          '<extra></extra>'
         ))
 
-        
 
-    
     # Update layout
     fig.update_layout(
         title=f"Hysteresis Loops for BMU ({bmu_row}, {bmu_col}) - {len(loops)} Event(s)",
@@ -358,11 +214,10 @@ def plot_hysteresis_loops(
     
     return fig
 
-
 def plot_loop_comparison(
     loops: List[np.ndarray],
     labels: List[str],
-    title: str = "Loop Comparison"
+    title: str
 ) -> go.Figure:
     """
     Create an interactive Plotly plot comparing multiple hysteresis loops.
@@ -388,8 +243,8 @@ def plot_loop_comparison(
         )
         fig.update_layout(
             title=title,
-            xaxis_title="Discharge (Qcms)",
-            yaxis_title="Concentration (turb)",
+            xaxis_title="Discharge",
+            yaxis_title="Concentration",
             height=500
         )
         return fig
@@ -406,7 +261,7 @@ def plot_loop_comparison(
             continue
             
         color = colors[idx % len(colors)]
-        
+        color = [float(i) for i in range(100)]
         # Determine line style based on label
         line_style = 'dash' if 'Prototype' in label else 'solid'
         line_width = 3 if 'Prototype' in label else 2
@@ -415,22 +270,21 @@ def plot_loop_comparison(
         fig.add_trace(go.Scatter(
             x=loop[:, 0],
             y=loop[:, 1],
-            mode='lines+markers',
+            mode='markers',
             name=label,
-            line=dict(color=color, width=line_width, dash=line_style),
-            marker=dict(size=4, color=color),
-            hovertemplate=f'<b>{label}</b><br>' +
-                         'Q: %{x:.3f} cms<br>' +
-                         'C: %{y:.2f}<br>' +
-                         '<extra></extra>'
+            # line=dict(color=color, width=line_width, dash=line_style),
+            marker=dict(size=4, color=np.array(color), colorscale='inferno'),
+            # hovertemplate=f'<b>{label}</b><br>' +
+            #              'Q: %{x:.3f} cms<br>' +
+            #              'C: %{y:.2f}<br>' +
+            #              '<extra></extra>'
         ))
-    
+
     # Update layout
     fig.update_layout(
         title=title,
-        xaxis_title="Discharge (Qcms)",
-        yaxis_title="Concentration (turb)",
-        hovermode='closest',
+        xaxis_title="Discharge",
+        yaxis_title="Concentration",
         height=500,
         showlegend=True,
         legend=dict(
@@ -443,9 +297,6 @@ def plot_loop_comparison(
     )
     
     return fig
-
-
-# ==================== UI COMPONENT FUNCTIONS ====================
 
 def create_time_series_plot(
     qt_data: pd.DataFrame,
@@ -491,7 +342,7 @@ def create_time_series_plot(
             fillcolor='green',
             opacity=0.15,
             line_width=0,
-            annotation_text=f"E{idx+1}" if idx < 5 else "",
+            annotation_text=f"E{idx+1}" if idx < 5 else "", 
             annotation_position="top left"
         )
     
@@ -525,7 +376,6 @@ def create_time_series_plot(
     
     return fig
 
-
 def load_qt_data_from_file(uploaded_file) -> pd.DataFrame:
     """
     Load Q-T time series data from uploaded CSV file.
@@ -548,7 +398,6 @@ def load_qt_data_from_file(uploaded_file) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
     
     return qt_data
-
 
 def load_events_data_from_file(uploaded_file) -> pd.DataFrame:
     """
@@ -578,7 +427,6 @@ def load_events_data_from_file(uploaded_file) -> pd.DataFrame:
     events_data.index = events_data.index + 1
     events_data.index.name = 'event_id'
     return events_data
-
 
 def calculate_dataset_metrics(
     qt_data: pd.DataFrame,
@@ -672,8 +520,6 @@ def style_df(df: pd.DataFrame, cmap:str | Colormap, vmin:float, vmax:float, subs
         cmap = LinearSegmentedColormap.from_list(f"{cmap.name}_", colors = colors, N= cmap.N) 
 
     return df.style.background_gradient(cmap = cmap,vmin = vmin, vmax = vmax, subset = subset)
-
-
 
 def get_prototype(bmu: tuple[int,int]):
     return SOM.get_prototypes()[bmu]

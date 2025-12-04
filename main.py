@@ -12,11 +12,8 @@ import pandas as pd
 import time
 from utils import (
     classify_loops,
-    get_frequency_matrix,
     plot_frequency_map,
-    get_loops_for_bmu,
     plot_hysteresis_loops,
-    get_average_loop_for_bmu,
     plot_loop_comparison,
     create_time_series_plot,
     load_qt_data_from_file,
@@ -145,12 +142,12 @@ st.markdown("### 🗺️ The Trained Self-Organizing Map")
 
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    som_image_path = pathlib.Path("assets").joinpath("TQSOM.png")
+    som_image_path = pathlib.Path("assets").joinpath("TQSOM_96dpi.jpg")
     if som_image_path.exists():
         st.image(str(som_image_path), 
-                 width=500)
+                 width=690)
     else:
-        st.info("SOM visualization image not found. Please ensure 'assets/TQSOM.png' exists.")
+        st.error("Failed to load the General T-Q SOM image", icon=":material/broken_image:")
 
 st.divider()
 
@@ -279,7 +276,7 @@ st.info("💡 **Tip**: Green shaded areas represent hydrologic events. Zoom in t
 st.divider()
 
 # ==================== EVENTS TABLE & LOOPS VIEWER ====================
-st.markdown("### 📋 Event Classifications & Loop Comparison")
+st.markdown("### 📋 Event Classifications & Loop Viewer")
 
 st.markdown("""
 This table shows each hydrologic event with its BMU coordinates and distance metric.
@@ -306,6 +303,7 @@ def display_events_table_and_loop_viewer():
         df_selection = st.dataframe(
             display_df,
             width="stretch",
+            height = 580,
             hide_index=True,
             on_select="rerun",
             selection_mode="multi-row",
@@ -376,7 +374,7 @@ def display_events_table_and_loop_viewer():
             comp_fig = plot_loop_comparison(
                 loops_to_plot,
                 labels_to_plot,
-                title=f"Comparing {len(loops_to_plot)} Loop(s)"
+                title=f"Selected Loops"
             )
             st.plotly_chart(comp_fig, width="stretch")
             
@@ -411,7 +409,7 @@ classified_loops = st.session_state.classified_loops
 with col_freq_map:
     st.markdown("#### Frequency Heatmap")
     with st.spinner("Generating Frequency Distribution...", show_time=True):
-        freq_fig = plot_frequency_map(classified_loops, title="Frequency Distribution")
+        freq_fig = plot_frequency_map(classified_loops)
         st.pyplot(freq_fig, width="stretch")
 
 with col_bmu_selector_and_loops:
