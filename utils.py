@@ -17,6 +17,16 @@ from hysom.utils.plots import heatmap_frequency, plot_map
 from data_models import Loop
 from matplotlib.colors import LinearSegmentedColormap, Colormap
 from pandas.io.formats.style import Styler
+from string import ascii_uppercase
+
+
+def bmu_to_xk(bmu_ij: tuple[int, int]) -> str:
+    i, j = bmu_ij
+    return f"{ascii_uppercase[i]}{j+1}"
+
+def bmu_to_ij(bmu_xk: str) -> tuple[int,int]:
+    row, col = (bmu_xk[0], int(bmu_xk[1])) 
+    return (ascii_uppercase.index(row), col - 1)
 
 
 SOM = get_generalTQSOM()
@@ -114,10 +124,10 @@ def classify_loops(loops: List[Loop]) -> List[Loop]:
         distances = SOM.distance_function(prototypes, loop_coords)
         min_dist = distances.min() 
         unraveled = np.unravel_index(distances.argmin(), distances.shape)
-        BMU = tuple(int(x) for x in unraveled)
-
+        BMU_ij = (int(unraveled[0]), int(unraveled[1]))
         classified_loop = loop.model_copy(deep = True)
-        classified_loop.BMU = BMU
+        classified_loop.BMU_ij = BMU_ij
+        classified_loop.BMU_xk = bmu_to_xk(BMU_ij)
         classified_loop.distance = min_dist
         classified_loops.append(classified_loop)   
     return classified_loops
@@ -445,7 +455,7 @@ def calculate_dataset_metrics(
     Returns:
         Dictionary with metric names and values
     """
-    unique_bmus = set([loop.BMU for loop in classified_loops] )
+    unique_bmus = set([loop.BMU_ij for loop in classified_loops] )
     date_range = (qt_data.index[-1] - qt_data.index[0]).days
     
     return {

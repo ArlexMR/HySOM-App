@@ -14,7 +14,8 @@ class Loop(BaseModel):
     start: datetime
     end: datetime
     coordinates: np.ndarray 
-    BMU: tuple[int, ...] | None  = None
+    BMU_ij: tuple[int, int] | None  = None # BMU coordinates following matrix notation
+    BMU_xk: str | None = None # BMU coordinates following alphanumeric notation e.g.: 'A1'
     distance: float | None  = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

@@ -11,6 +11,7 @@ from data_models import UserData, Loop
 import pandas as pd
 import time
 from math import ceil
+from string import ascii_uppercase
 from utils import (
     classify_loops,
     plot_frequency_map,
@@ -30,9 +31,10 @@ DATETIME_STR_FORMAT = "YYYY-MM-DD HH:mm:ss"
 # Page configuration
 st.set_page_config(
     page_title="Suspended Sediment Hysteresis Loop Classifier",
-    # page_icon="🌊",
+    page_icon="./assets/favicon.svg",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto",
+    menu_items={'Report a bug':"mailto:arlexmarinr@gmail.com"}
 )
 
 # Custom CSS for better styling
@@ -70,29 +72,19 @@ st.html("""
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
-    # st.markdown("## ⚙️ Settings & Info")
-    
-    # st.markdown("### SOM Configuration")
-    # st.markdown("""
-    # - **Grid Size**: 8 × 8
-    # - **Training Data**: Multi-watershed dataset
-    # - **Input Features**: Normalized Q-C loops
-    # """)
-    
-    # st.divider()
-    
+    st.markdown("**Version**: 1.0.0-Beta")
+    st.divider()
     st.markdown("### 📚 Resources")
     st.markdown("""
     - [Research Paper](https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2146/)
     - [HySOM python package](https://github.com/ArlexMR/HySOM)
-    - [GitHub Repository](#)
+    - [GitHub Repository](https://github.com/ArlexMR/HySOM-App)
     
     """)
     
-    st.divider()
     
-    st.markdown("**Version**: 1.0.0-Beta")
-    st.markdown("**Status**: Under Development!")
+    
+
 
 # Initialize session state
 
@@ -113,8 +105,7 @@ with col_description:
     st.markdown("""
     ### What is this app?
 
-    In this application you can visualize and classify your sediment transport hysteresis loops data using the **General T-Q SOM**, a Self-Organizing Map (SOM) trained with the primary loop types for suspended sediment transport in watersheds.   
-    To learn more about the general T-Q SOM, [check out our paper](https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2146/).
+    In this application you can visualize and classify sediment transport hysteresis loops data using the **General T-Q SOM**, a Self-Organizing Map (SOM) trained with the primary loop types for suspended sediment transport in watersheds. To learn more about the general T-Q SOM, [check out our paper](https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2146/).
 
                 
     Here, you can:
@@ -139,7 +130,7 @@ with col_som:
     col1, col2, col3 = st.columns([0.8, 2, 1])
     with col2:
         st.markdown("### The General T-Q SOM")
-    som_image_path = pathlib.Path("assets").joinpath("TQSOM_large.jpg")
+    som_image_path = pathlib.Path("assets").joinpath("TQSOM.jpg")
     if som_image_path.exists():
         st.image(str(som_image_path), 
                 width=650)
@@ -160,7 +151,12 @@ with col1:
         "Upload CSV file with columns: `datetime`, `discharge`, `concentration`",
         type=["csv"],
         key="qt_uploader",
-        help="CSV file containing your time series data. Make sure to label your columns as: `datetime`,`discharge`,`concentration`. Use the following format for datetimes: `YYYY-MM-DD HH:mm:ss`"
+        help="""
+        CSV file containing discharge and concentration time series data:  
+        1. Make sure to label your columns as: `datetime`,`discharge`,`concentration`. 
+        2. Use the following format for datetimes: `YYYY-MM-DD HH:mm:ss`
+        
+        """
     )
     
     if uploaded_qc is not None:
@@ -182,7 +178,11 @@ with col2:
         "Upload CSV file with columns: `start`, `end`",
         type=["csv"],
         key="events_uploader",
-        help="CSV file containing start and end timestamps for each hydrologic event. Use the following format for datetimes: `YYYY-MM-DD HH:mm:ss`"
+        help="""
+        CSV file containing start and end timestamps for each hydrologic event:  
+        1. Make sure to label your columns as: `start`,`end`. 
+        2. Use the following format for the start and end datetimes: `YYYY-MM-DD HH:mm:ss`
+        """
     )
     
     if uploaded_events is not None:
@@ -309,7 +309,8 @@ def display_events_table_and_loop_viewer():
                 "ID": st.column_config.NumberColumn("Event #", format="%d", pinned=True),
                 "start": st.column_config.DatetimeColumn("Start Time", format=DATETIME_STR_FORMAT),
                 "end": st.column_config.DatetimeColumn("End Time", format=DATETIME_STR_FORMAT),
-                "BMU" : st.column_config.TextColumn("BMU [row, col]", help = "Coordinates of the Best Matching Unit, i.e., the prototype in the General T-Q SOM that is most similar to the given loop."),
+                "BMU_ij" : None,
+                "BMU_xk" : st.column_config.TextColumn("BMU", help = "Coordinates of the Best Matching Unit, i.e., the prototype in the General T-Q SOM that is most similar to the given loop."), 
                 "distance": st.column_config.NumberColumn("Distance", format="%.4f", help="DTW distance from BMU prototype (lower is better)")
             }
         )
@@ -326,7 +327,10 @@ def display_events_table_and_loop_viewer():
     
     with col_comparison:
         st.markdown("#### Loop Viewer")
-        add_prototype = st.button("➕Add Prototype")
+        with st.container(horizontal=True):
+            add_prototype = st.button("➕Add Prototype")
+            clear_prototype = st.button("➖Clear Prototype")
+
         selected_row = df_selection.get("selection", {}).get("rows", [])
 
         # Collect loops and labels
@@ -345,9 +349,10 @@ def display_events_table_and_loop_viewer():
             loops_to_plot.append(loop.coordinates)
             labels_to_plot.append(loop_label)
             if add_prototype:
-                bmu_row, bmu_col = classification_df.iloc[row_id]["BMU"]
-                proto_loop = get_prototype((bmu_row, bmu_col))
-                proto_label = f"Prototype ({bmu_row}, {bmu_col})"
+                bmu_i, bmu_j = classification_df.iloc[row_id]["BMU_ij"]
+                bmu_xk = classification_df.iloc[row_id]["BMU_xk"]
+                proto_loop = get_prototype((bmu_i, bmu_j))
+                proto_label = f"Prototype {bmu_xk}"
                 loops_to_plot.append(proto_loop)
                 labels_to_plot.append(proto_label)
 
@@ -366,7 +371,7 @@ def display_events_table_and_loop_viewer():
             # Clear buttons
             col_clear1, col_clear2 = st.columns(2)
             with col_clear1:
-                if st.button("Clear Prototype", width="stretch"):
+                if clear_prototype:
                     st.session_state.selected_prototypes = set()
                     st.rerun(scope="fragment")  # Only rerun the fragment, not the entire app
         else:
@@ -382,7 +387,7 @@ else:
 st.divider()
 
 # ==================== FREQUENCY MAP & LOOP VIEWER ====================
-st.markdown("### 🗺️ Frequency Distribution & Loop Explorer")
+st.markdown("### 🔍Frequency Distribution & Loop Explorer")
 
 st.markdown("""
 The heatmap shows how many hysteresis loops map to each SOM unit. 
@@ -404,30 +409,28 @@ with col_bmu_selector_and_loops:
     @st.fragment
     def loop_viewer_fragment():
 
-        with st.form("BMU selection", ):
-
+        with st.form("BMU selection", width=300 ):
             with st.container(border = False, horizontal=True):
-
                 selected_row = st.selectbox(
                     "BMU Row",
-                    options=list(range(8)),
-                    index=0,
-                    help="Row coordinate (0-7)",
-                    key="bmu_row_selector"
+                    options=list(ascii_uppercase[:8]),
+                    help="Row coordinate (A-H)",
+                    key="bmu_row_selector",
+                    width=100
                 )
                 
                 # with subcol2:
                 selected_col = st.selectbox(
                     "BMU Column",
-                    options=list(range(8)),
-                    index=0,
-                    help="Column coordinate (0-7)",
-                    key="bmu_col_selector"
+                    options=list(range(1,9)),
+                    help="Column coordinate (1-8)",
+                    key="bmu_col_selector",
+                    width=100
                 )
             submitted_bmu = st.form_submit_button("Plot Loops")    
 
         classified_loops = st.session_state.classified_loops
-        matching_loops = [loop for loop in classified_loops if loop.BMU == (selected_row, selected_col)]
+        matching_loops = [loop for loop in classified_loops if loop.BMU_xk == f"{selected_row}{selected_col}"]
 
         if not matching_loops:
 
@@ -447,11 +450,9 @@ with col_bmu_selector_and_loops:
 
                 st.markdown(f"### {nloops} {"loop" if nloops == 1 else "loops"} mapped to the selected BMU:")
                 st.pyplot(loops_fig, dpi = figdpi, width=figdpi*max_ncols)
-            # st.caption(f"**Events:** {', '.join([f'E{eid}' for eid in ids])}")
         else:
             st.info(f"No events at BMU ({selected_row}, {selected_col})")
 
-    # Call the fragment
     loop_viewer_fragment()
 
 
