@@ -14,7 +14,6 @@ from math import ceil
 from utils import (
     classify_loops,
     plot_frequency_map,
-    plot_hysteresis_loops,
     plot_loops,
     create_time_series_plot,
     load_qt_data_from_file,
@@ -30,8 +29,8 @@ DATETIME_STR_FORMAT = "YYYY-MM-DD HH:mm:ss"
 
 # Page configuration
 st.set_page_config(
-    page_title="HySOM - Hysteresis Loop Classifier",
-    page_icon="🌊",
+    page_title="Suspended Sediment Hysteresis Loop Classifier",
+    # page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -40,7 +39,7 @@ st.set_page_config(
 st.html("""
     <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 3.0rem;
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
@@ -71,36 +70,29 @@ st.html("""
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
-    st.markdown("## ⚙️ Settings & Info")
+    # st.markdown("## ⚙️ Settings & Info")
     
-    st.markdown("### SOM Configuration")
-    st.markdown("""
-    - **Grid Size**: 8 × 8
-    - **Training Data**: Multi-watershed dataset
-    - **Input Features**: Normalized Q-C loops
-    """)
-    
-    st.divider()
-    
-    st.markdown("### 📚 Resources")
-    st.markdown("""
-    - [Documentation](#)
-    - [GitHub Repository](#)
-    - [Research Paper](#)
-    """)
-    
-    st.divider()
-    
-    # st.markdown("### 🔄 Reset Application")
-    # if st.button("Clear All Data", width="stretch"):
-
-    #     st.rerun()
+    # st.markdown("### SOM Configuration")
+    # st.markdown("""
+    # - **Grid Size**: 8 × 8
+    # - **Training Data**: Multi-watershed dataset
+    # - **Input Features**: Normalized Q-C loops
+    # """)
     
     # st.divider()
     
-
-    st.markdown("**Version**: 1.0.0 (Demo)")
-    st.markdown("**Status**: Mock Functions Active")
+    st.markdown("### 📚 Resources")
+    st.markdown("""
+    - [Research Paper](https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2146/)
+    - [HySOM python package](https://github.com/ArlexMR/HySOM)
+    - [GitHub Repository](#)
+    
+    """)
+    
+    st.divider()
+    
+    st.markdown("**Version**: 1.0.0-Beta")
+    st.markdown("**Status**: Under Development!")
 
 # Initialize session state
 
@@ -111,43 +103,46 @@ if 'classified_events' not in st.session_state:
 
 
 # ==================== HEADER ====================
-st.html('<div class="main-header">🌊 HySOM: Hysteresis Loop Classifier</div>')
+st.html('<div class="main-header">Suspended Sediment Hysteresis Loop Classifier</div>')
 st.html('<div class="sub-header">Automatic classification of suspended sediment hysteresis loops using Self-Organizing Maps</div>')
 
 # ==================== INTRODUCTION ====================
-with st.expander("ℹ️ About this Application", expanded=False):
+# with st.expander("ℹ️ About this Application", expanded=False):
+col_description, col_som = st.columns([1,1])
+with col_description:
     st.markdown("""
     ### What is this app?
-    
-    This application demonstrates the use of a **Self-Organizing Map (SOM)** trained on discharge-concentration 
-    hysteresis loops to automatically classify hydrologic events. The trained SOM allows researchers to:
-    
-    - 📊 **Classify hysteresis patterns** from watershed events
-    - 🔍 **Identify similar hydrologic behaviors** across different events
-    - 📈 **Visualize frequency distributions** of loop types in your watershed
-    
+
+    In this application you can visualize and classify your sediment transport hysteresis loops data using the **General T-Q SOM**, a Self-Organizing Map (SOM) trained with the primary loop types for suspended sediment transport in watersheds.   
+    To learn more about the general T-Q SOM, [check out our paper](https://egusphere.copernicus.org/preprints/2025/egusphere-2025-2146/).
+
+                
+    Here, you can:
+
+    - **Visualize hysteresis loops**: upload your discharge-concentration time series data and events info to visualize hysteresis loops   
+    - **Classify hysteresis loops**: Classify hysteresis loops using *The General T-Q SOM*  
+    - **Visualize frequency distributions** of loop types
+
     ### How does it work?
-    
-    1. **Upload your data**: Provide discharge-concentration time series and event definitions
+
+    1. **Upload your data**: Provide discharge-concentration time series and event definitions (or try it out with the sample data)
     2. **Automatic processing**: The app extracts hysteresis loops for each event
-    3. **Classification**: Each loop is mapped to its Best Matching Unit (BMU) on the trained SOM
-    4. **Visualization**: View the frequency distribution and event classifications
-    
-    ### The General T-Q SOM
-    
-    The SOM used in this application was trained on a diverse set of hysteresis loops from multiple watersheds,
-    making it a "general" classifier that can be applied to new data.
+    3. **Classification**: Each loop is mapped to its Best Matching Unit (BMU) on the *General T-Q SOM*
+    4. **Visualization**: Visualize individual loops, the frequency distribution and classified loops
+
+    This app uses the [HySOM](https://github.com/ArlexMR/HySOM) python package which you can install in your PC to run your own analysis. Check out the [documentation](https://hysom.readthedocs.io/en/latest/) for details. 
+
     """)
 
 # ==================== SOM VISUALIZATION ====================
-st.markdown("### 🗺️ The Trained Self-Organizing Map")
-
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
+with col_som:
+    col1, col2, col3 = st.columns([0.8, 2, 1])
+    with col2:
+        st.markdown("### The General T-Q SOM")
     som_image_path = pathlib.Path("assets").joinpath("TQSOM_large.jpg")
     if som_image_path.exists():
         st.image(str(som_image_path), 
-                 width=890)
+                width=650)
     else:
         st.error("Failed to load the General T-Q SOM image", icon=":material/broken_image:")
 
@@ -162,10 +157,10 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("#### Discharge-Concentration Time Series")
     uploaded_qc = st.file_uploader(
-        "Upload CSV file with columns: `datetime`, `Qcms`, `turb`",
+        "Upload CSV file with columns: `datetime`, `discharge`, `concentration`",
         type=["csv"],
         key="qt_uploader",
-        help="CSV file containing timestamp, discharge (Qcms), and concentration (turb) data"
+        help="CSV file containing your time series data. Make sure to label your columns as: datetime,discharge,concentration"
     )
     
     if uploaded_qc is not None:
@@ -187,7 +182,7 @@ with col2:
         "Upload CSV file with columns: `start`, `end`",
         type=["csv"],
         key="events_uploader",
-        help="CSV file containing start and end timestamps for each hydrologic event"
+        help="CSV file containing start and end timestamps for each hydrologic event. Use the following format for your datetimes: `YYYY-MM-DD HH:mm:ss`"
     )
     
     if uploaded_events is not None:

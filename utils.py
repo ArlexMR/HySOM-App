@@ -165,8 +165,8 @@ def plot_hysteresis_loops(loops: List[np.ndarray],event_ids: List[int],bmu_row: 
         )
         fig.update_layout(
             title=f"Hysteresis Loops for BMU ({bmu_row}, {bmu_col})",
-            xaxis_title="Discharge (Qcms)",
-            yaxis_title="Concentration (turb)",
+            xaxis_title="Discharge",
+            yaxis_title="Concentration",
             height=600
         )
         return fig
@@ -199,8 +199,8 @@ def plot_hysteresis_loops(loops: List[np.ndarray],event_ids: List[int],bmu_row: 
     # Update layout
     fig.update_layout(
         title=f"Hysteresis Loops for BMU ({bmu_row}, {bmu_col}) - {len(loops)} Event(s)",
-        xaxis_title="Discharge (Qcms)",
-        yaxis_title="Concentration (turb)",
+        xaxis_title="Discharge",
+        yaxis_title="Concentration",
         hovermode='closest',
         height=400,
         showlegend=True,
@@ -308,7 +308,7 @@ def create_time_series_plot(
     Create an interactive time series plot with dual axes and event overlays.
     
     Args:
-        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
+        qt_data: DataFrame with datetime index and columns ['discharge', 'concentration']
         events_data: DataFrame with columns ['start', 'end']
     
     Returns:
@@ -319,9 +319,9 @@ def create_time_series_plot(
     # Add discharge trace
     fig.add_trace(go.Scatter(
         x=qt_data.index,
-        y=qt_data['Qcms'],
+        y=qt_data['discharge'],
         mode='lines',
-        name='Discharge (Qcms)',
+        name='Discharge',
         line=dict(color='#1f77b4', width=1.5),
         yaxis='y1'
     ))
@@ -329,9 +329,9 @@ def create_time_series_plot(
     # Add concentration trace
     fig.add_trace(go.Scatter(
         x=qt_data.index,
-        y=qt_data['turb'],
+        y=qt_data['concentration'],
         mode='lines',
-        name='Turbidity',
+        name='concentration',
         line=dict(color='#ff7f0e', width=1.5),
         yaxis='y2'
     ))
@@ -353,12 +353,12 @@ def create_time_series_plot(
         title="Discharge and Concentration Time Series with Hydrologic Events",
         xaxis_title="Date",
         yaxis=dict(
-            title="Discharge (Qcms)",
+            title="Discharge",
             title_font=dict(color='#1f77b4'),
             tickfont=dict(color='#1f77b4')
         ),
         yaxis2=dict(
-            title="Turbidity",
+            title="Concentration",
             title_font=dict(color='#ff7f0e'),
             tickfont=dict(color='#ff7f0e'),
             overlaying='y',
@@ -386,7 +386,7 @@ def load_qt_data_from_file(uploaded_file) -> pd.DataFrame:
         uploaded_file: Streamlit UploadedFile object
     
     Returns:
-        DataFrame with datetime index and columns ['Qcms', 'turb']
+        DataFrame with datetime index and columns ['discharge', 'concentration']
     
     Raises:
         ValueError: If required columns are missing
@@ -394,7 +394,8 @@ def load_qt_data_from_file(uploaded_file) -> pd.DataFrame:
     qt_data = pd.read_csv(uploaded_file, index_col="datetime", parse_dates=True)
     
     # Validate required columns
-    required_cols = ['Qcms', 'turb']
+    # required_cols = ['Qcms', 'turb']
+    required_cols = ['discharge', 'concentration']
     missing_cols = [col for col in required_cols if col not in qt_data.columns]
     if missing_cols:
         raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
@@ -459,7 +460,7 @@ def extract_loops(qc_data: pd.DataFrame, events_data: pd.DataFrame) -> list[Loop
     Extract hysteresis loops from events in the time series data.
     
     Args:
-        qt_data: DataFrame with datetime index and columns ['Qcms', 'turb']
+        qt_data: DataFrame with datetime index and columns ['discharge', 'concentration']
         events_data: DataFrame with columns ['start', 'end'] as datetime
     
     Returns:
