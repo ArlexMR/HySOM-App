@@ -344,8 +344,8 @@ def create_time_series_plot(
             fillcolor='green',
             opacity=0.15,
             line_width=0,
-            annotation_text=f"E{idx+1}" if idx < 5 else "", 
-            annotation_position="top left"
+            # annotation_text=f"E{idx+1}" if idx < 5 else "", 
+            # annotation_position="top left"
         )
     
     # Update layout
