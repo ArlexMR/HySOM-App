@@ -214,7 +214,7 @@ def plot_hysteresis_loops(loops: List[np.ndarray],event_ids: List[int],bmu_row: 
     
     return fig
 
-def plot_loop_comparison(
+def plot_loops(
     loops: List[np.ndarray],
     labels: List[str],
     title: str
@@ -245,7 +245,7 @@ def plot_loop_comparison(
             title=title,
             xaxis_title="Discharge",
             yaxis_title="Concentration",
-            height=500
+            height=300
         )
         return fig
     
@@ -263,21 +263,19 @@ def plot_loop_comparison(
         color = colors[idx % len(colors)]
         color = [float(i) for i in range(100)]
         # Determine line style based on label
-        line_style = 'dash' if 'Prototype' in label else 'solid'
-        line_width = 3 if 'Prototype' in label else 2
+        markr_style = 'x' if 'Prototype' in label else 'circle'
+
         
         # Add the loop trace
         fig.add_trace(go.Scatter(
             x=loop[:, 0],
             y=loop[:, 1],
             mode='markers',
+            marker_symbol = markr_style,
             name=label,
             # line=dict(color=color, width=line_width, dash=line_style),
             marker=dict(size=4, color=np.array(color), colorscale='inferno'),
-            # hovertemplate=f'<b>{label}</b><br>' +
-            #              'Q: %{x:.3f} cms<br>' +
-            #              'C: %{y:.2f}<br>' +
-            #              '<extra></extra>'
+
         ))
 
     # Update layout
@@ -285,8 +283,10 @@ def plot_loop_comparison(
         title=title,
         xaxis_title="Discharge",
         yaxis_title="Concentration",
-        height=500,
+        height=300,
         showlegend=True,
+        hovermode = False,
+        dragmode = False,
         legend=dict(
             orientation="v",
             yanchor="top",
@@ -295,7 +295,8 @@ def plot_loop_comparison(
             x=1.02
         )
     )
-    
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
     return fig
 
 def create_time_series_plot(

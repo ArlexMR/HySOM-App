@@ -14,7 +14,7 @@ from utils import (
     classify_loops,
     plot_frequency_map,
     plot_hysteresis_loops,
-    plot_loop_comparison,
+    plot_loops,
     create_time_series_plot,
     load_qt_data_from_file,
     load_events_data_from_file,
@@ -140,12 +140,12 @@ with st.expander("ℹ️ About this Application", expanded=False):
 # ==================== SOM VISUALIZATION ====================
 st.markdown("### 🗺️ The Trained Self-Organizing Map")
 
-col1, col2, col3 = st.columns([1, 1, 1])
+col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    som_image_path = pathlib.Path("assets").joinpath("TQSOM_96dpi.jpg")
+    som_image_path = pathlib.Path("assets").joinpath("TQSOM_large.jpg")
     if som_image_path.exists():
         st.image(str(som_image_path), 
-                 width=690)
+                 width=890)
     else:
         st.error("Failed to load the General T-Q SOM image", icon=":material/broken_image:")
 
@@ -223,6 +223,7 @@ with col2:
 st.divider()
 
 # ==================== ANALYSIS & VISUALIZATION ====================
+
 
 if (st.session_state.user_data.QC is None) or (st.session_state.user_data.events is None):
     st.info("👆 Please upload your data files or load the example data to begin the analysis.")
@@ -303,10 +304,10 @@ def display_events_table_and_loop_viewer():
         df_selection = st.dataframe(
             display_df,
             width="stretch",
-            height = 580,
+            height = 355,
             hide_index=True,
             on_select="rerun",
-            selection_mode="multi-row",
+            selection_mode="single-row",
             column_config={
                 "ID": st.column_config.NumberColumn("Event #", format="%d", pinned=True),
                 "start": st.column_config.DatetimeColumn("Start Time", format=DATETIME_STR_FORMAT),
@@ -328,60 +329,47 @@ def display_events_table_and_loop_viewer():
     
     with col_comparison:
         st.markdown("#### Loop Viewer")
-        
-        # Controls for adding prototype
-        with st.expander("➕ Add SOM Prototype"):
-            subcol1, subcol2, subcol3 = st.columns([1, 1, 1])
-            with subcol1:
-                proto_row = st.number_input("Row", min_value=0, max_value=7, value=0, key="proto_row")
-            with subcol2:
-                proto_col = st.number_input("Col", min_value=0, max_value=7, value=0, key="proto_col")
-            with subcol3:
-                add_proto = st.button("Add", width="stretch", key="add_proto")
-        
-        # Initialize session state for prototype selection
-        if 'selected_prototypes' not in st.session_state:
-            st.session_state.selected_prototypes = set()
-        
-        if add_proto:
-            st.session_state.selected_prototypes.add((proto_row, proto_col))
-        
-        # Get selected rows
-        selected_rows = df_selection.get("selection", {}).get("rows", [])
+        add_prototype = st.button("➕Add Prototype")
+        selected_row = df_selection.get("selection", {}).get("rows", [])
+
         # Collect loops and labels
         loops_to_plot = []
         labels_to_plot = []
 
         # Add selected event loops
         classified_loops = st.session_state.classified_loops
-        if len(selected_rows) > 0:
-            for row_id in selected_rows:
-                loop_id = classification_df.iloc[row_id]["ID"] 
-                loop = next((item for item in classified_loops if item.ID == loop_id), None)
-                if not loop:
-                    continue
-                loops_to_plot.append(loop.coordinates)
-                labels_to_plot.append(f"Event {loop_id}")
-        
+        loops_to_plot = []
+        labels_to_plot = []
+        if selected_row:
+            row_id = selected_row[0]
+            loop_id = classification_df.iloc[row_id]["ID"] 
+            loop = next((item for item in classified_loops if item.ID == loop_id))
+            loop_label = f"Event {loop_id}"
+            loops_to_plot.append(loop.coordinates)
+            labels_to_plot.append(loop_label)
+            if add_prototype:
+                bmu_row, bmu_col = classification_df.iloc[row_id]["BMU"]
+                proto_loop = get_prototype((bmu_row, bmu_col))
+                proto_label = f"Prototype ({bmu_row}, {bmu_col})"
+                loops_to_plot.append(proto_loop)
+                labels_to_plot.append(proto_label)
+
         # Add prototype loops
-        for proto_coords in st.session_state.selected_prototypes:
-            proto_loop = get_prototype(proto_coords)
-            loops_to_plot.append(proto_loop)
-            labels_to_plot.append(f"Prototype ({proto_coords[0]}, {proto_coords[1]})")
+
     
         # Plot comparison
         if len(loops_to_plot) > 0:
-            comp_fig = plot_loop_comparison(
+            comp_fig = plot_loops(
                 loops_to_plot,
                 labels_to_plot,
-                title=f"Selected Loops"
+                title=f"Selected Loop"
             )
-            st.plotly_chart(comp_fig, width="stretch")
+            st.plotly_chart(comp_fig, width=300)
             
             # Clear buttons
             col_clear1, col_clear2 = st.columns(2)
             with col_clear1:
-                if st.button("Clear Prototypes", width="stretch"):
+                if st.button("Clear Prototype", width="stretch"):
                     st.session_state.selected_prototypes = set()
                     st.rerun(scope="fragment")  # Only rerun the fragment, not the entire app
         else:
