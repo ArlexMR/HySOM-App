@@ -160,7 +160,7 @@ with col1:
         "Upload CSV file with columns: `datetime`, `discharge`, `concentration`",
         type=["csv"],
         key="qt_uploader",
-        help="CSV file containing your time series data. Make sure to label your columns as: datetime,discharge,concentration"
+        help="CSV file containing your time series data. Make sure to label your columns as: `datetime`,`discharge`,`concentration`. Use the following format for datetimes: `YYYY-MM-DD HH:mm:ss`"
     )
     
     if uploaded_qc is not None:
@@ -182,7 +182,7 @@ with col2:
         "Upload CSV file with columns: `start`, `end`",
         type=["csv"],
         key="events_uploader",
-        help="CSV file containing start and end timestamps for each hydrologic event. Use the following format for your datetimes: `YYYY-MM-DD HH:mm:ss`"
+        help="CSV file containing start and end timestamps for each hydrologic event. Use the following format for datetimes: `YYYY-MM-DD HH:mm:ss`"
     )
     
     if uploaded_events is not None:
@@ -370,7 +370,7 @@ def display_events_table_and_loop_viewer():
                     st.session_state.selected_prototypes = set()
                     st.rerun(scope="fragment")  # Only rerun the fragment, not the entire app
         else:
-            st.info("Select events from the table or add a prototype to compare loops")
+            st.info("Select an event from the table to visualize it")
 
 # Call the fragment
 classified_loops = st.session_state.classified_loops
