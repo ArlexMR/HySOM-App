@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import plotly.graph_objects as go
 from typing import List, Tuple, Dict, Any
+from math import ceil
 # from datetime import datetime
 # from hysom import HSOM
 from hysom.pretrainedSOM import get_generalTQSOM
@@ -524,3 +525,29 @@ def style_df(df: pd.DataFrame, cmap:str | Colormap, vmin:float, vmax:float, subs
 
 def get_prototype(bmu: tuple[int,int]):
     return SOM.get_prototypes()[bmu]
+
+def plot_loops_mpl(loops: list[Loop], figsize: tuple[int|float, int|float], max_ncols: int = 4) -> Figure:
+    nloops = len(loops)
+    fig= plt.figure(figsize =figsize)
+    if nloops < max_ncols: # ensure ncols cols are used 
+        for i in range(max_ncols):
+            ax = fig.add_subplot(1,max_ncols,i+1)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            
+            for spine in ax.spines:
+                ax.spines[spine].set_visible(False)
+
+    nrows = ceil(nloops / max_ncols)
+
+    for i, loop in enumerate(loops):
+        loop_coords = loop.coordinates
+        ax = fig.add_subplot(nrows, max_ncols, i+1) 
+        ax.scatter(loop_coords[:,0], loop_coords[:,1], cmap = "inferno", c = range(len(loop_coords)), s = 2)
+        ax.set_xticks([],[])
+        ax.set_yticks([],[])
+        ax.set_title(f"Event: {loop.ID}", fontsize = 9)
+    
+    # fig.set_facecolor("gray")
+
+    return fig

@@ -10,6 +10,7 @@ import pathlib
 from data_models import UserData, Loop
 import pandas as pd
 import time
+from math import ceil
 from utils import (
     classify_loops,
     plot_frequency_map,
@@ -22,7 +23,8 @@ from utils import (
     extract_loops,
     build_classification_df,
     style_df,
-    get_prototype
+    get_prototype,
+    plot_loops_mpl
 )
 DATETIME_STR_FORMAT = "YYYY-MM-DD HH:mm:ss"
 
@@ -406,11 +408,10 @@ with col_bmu_selector_and_loops:
     # Use fragment to prevent full app rerun when selecting coordinates
     @st.fragment
     def loop_viewer_fragment():
-        # BMU selector
-        col_bmu_selector, col_loops_chart = st.columns([2,5])
-        with col_bmu_selector:
-            with st.form("BMU selection"):
-                # subcol1, subcol2, subcol3 = st.columns(3)
+
+        with st.form("BMU selection", ):
+
+            with st.container(border = False, horizontal=True):
 
                 selected_row = st.selectbox(
                     "BMU Row",
@@ -428,39 +429,33 @@ with col_bmu_selector_and_loops:
                     help="Column coordinate (0-7)",
                     key="bmu_col_selector"
                 )
-                submitted_bmu = st.form_submit_button("Plot Loops")    
+            submitted_bmu = st.form_submit_button("Plot Loops")    
 
-            classified_loops = st.session_state.classified_loops
-            matching_loops = [loop for loop in classified_loops if loop.BMU == (selected_row, selected_col)]
+        classified_loops = st.session_state.classified_loops
+        matching_loops = [loop for loop in classified_loops if loop.BMU == (selected_row, selected_col)]
 
-            st.metric(
-                label=f"Events at ({selected_row}, {selected_col})",
-                value=len(matching_loops)
-        )
-        # if not submitted_bmu:
-        #     st.info("Select a BMU to see its associated loops")
-        #     st.stop()
         if not matching_loops:
-            with col_loops_chart:
-                st.info("No loops for the selected BMU")
-            st.stop()
-            
-        
-        # if matching_loops:
-        selected_loops, ids = zip(*[(loop.coordinates, loop.ID) for loop in matching_loops])
-        # Show count of events at this BMU
-        with col_loops_chart:
-            if len(selected_loops) > 0:
-                # Plot the loops
-                loop_fig = plot_hysteresis_loops(list(selected_loops), list(ids), selected_row, selected_col)
 
-                st.plotly_chart(loop_fig, width="stretch")
-                
-                # Show event IDs
-                st.caption(f"**Events:** {', '.join([f'E{eid}' for eid in ids])}")
-            else:
-                st.info(f"No events at BMU ({selected_row}, {selected_col})")
-    
+            st.info("No loops for the selected BMU")
+            st.stop()
+
+        if len(matching_loops) > 0:
+
+            max_ncols= 4
+            figdpi = 72
+            nloops = len(matching_loops)
+            nrows = ceil(nloops / max_ncols)  
+
+            figsize = (max_ncols, nrows)        
+            loops_fig = plot_loops_mpl(matching_loops, figsize = figsize, max_ncols=max_ncols)
+            with st.container(width = "stretch", height= 200):
+
+                st.markdown(f"### {nloops} {"loop" if nloops == 1 else "loops"} mapped to the selected BMU:")
+                st.pyplot(loops_fig, dpi = figdpi, width=figdpi*max_ncols)
+            # st.caption(f"**Events:** {', '.join([f'E{eid}' for eid in ids])}")
+        else:
+            st.info(f"No events at BMU ({selected_row}, {selected_col})")
+
     # Call the fragment
     loop_viewer_fragment()
 
